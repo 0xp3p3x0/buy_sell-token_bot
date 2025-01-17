@@ -2,9 +2,9 @@
   "name": "swap-token",
   "version": "1.0.0",
   "main": "index.js",
-  "type": "module",
   "scripts": {
-    "start": "node index.js",
+    "start": "node server.js",
+    "bot": "node index.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "author": "",
@@ -15,8 +15,10 @@
     "@solana/buffer-layout": "^4.0.1",
     "@solana/buffer-layout-utils": "^0.2.0",
     "@solana/web3.js": "^1.98.0",
+    "axios": "^1.7.9",
     "bs58": "^6.0.0",
     "chalk": "^5.4.1",
-    "dotenv": "^16.4.7"
+    "dotenv": "^16.4.7",
+    "express": "^4.21.2"
   }
 }

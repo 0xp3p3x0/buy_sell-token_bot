@@ -1,15 +1,35 @@
 import { buy } from "./buy-helper.js";
-import { sell } from "./sell-helpers.js";
-import { getPrice } from "./utils.js";
+import { sell } from "./sell-helper.js";
+import { getPrice, getBalance, getTokenBalance } from "./utils.js";
 import axios from "axios";
+import fs from "fs";
 
 // Configuration
-const SLIPPAGE = 0.01; // 1% slippage
+const SLIPPAGE = 1; // 1% slippage
 const CHECK_INTERVAL = 15000; // 15 seconds in milliseconds
 const BUY_INTERVAL = 600000; // 10 minutes in milliseconds
+const POSITIONS_FILE = "positions.json";
 
 // State to track token positions
-const positions = {};
+let positions = {};
+
+/**
+ * Load positions from file.
+ */
+function loadPositions() {
+  if (fs.existsSync(POSITIONS_FILE)) {
+    const data = fs.readFileSync(POSITIONS_FILE, "utf8");
+    if(!data) return;
+    positions = JSON.parse(data);
+  }
+}
+
+/**
+ * Save positions to file.
+ */
+function savePositions() {
+  fs.writeFileSync(POSITIONS_FILE, JSON.stringify(positions, null, 2));
+}
 
 /**
  * Function to handle buying a token.
@@ -30,6 +50,9 @@ async function buyToken(tokenAddress, solAmount) {
   console.log(
     `Bought ${positions[tokenAddress].size} of ${tokenAddress} at ${purchasePrice} SOL.`
   );
+
+  // Save positions to file
+  savePositions();
 }
 
 /**
@@ -44,7 +67,7 @@ async function sellToken(tokenAddress, percentage) {
     return;
   }
 
-  const amountToSell = (position.size * percentage) / 100;
+  const amountToSell = Math.floor((position.size * percentage) / 100);
   const currentPrice = await getPrice(tokenAddress);
 
   await sell(tokenAddress, amountToSell, SLIPPAGE);
@@ -54,6 +77,9 @@ async function sellToken(tokenAddress, percentage) {
   console.log(
     `Sold ${amountToSell} of ${tokenAddress} at ${currentPrice} SOL.`
   );
+
+  // Save positions to file
+  savePositions();
 }
 
 /**
@@ -63,8 +89,9 @@ async function monitorPositions() {
   for (const tokenAddress in positions) {
     const position = positions[tokenAddress];
     const currentPrice = await getPrice(tokenAddress);
-    const gain =
-      (currentPrice - position.purchasePrice) / position.purchasePrice;
+    const gain = (currentPrice - position.purchasePrice) / position.purchasePrice;
+
+    console.log("gain : ", gain);
 
     // Check gain/loss conditions
     if (gain >= 2 && position.remainingPercentage >= 50) {
@@ -85,24 +112,18 @@ async function monitorPositions() {
  * Function to buy new tokens periodically.
  */
 async function buyNewTokens() {
+  var tokensToBuy;
+  var amountOfSol;
+
   try {
     const response = await axios.get("http://localhost:3000/api/tokens");
-    const tokensToBuy = response.data.address;
-    const amountOfSol = response.data.AmountOfBuy;
+    tokensToBuy = response.data.address;
+    amountOfSol = response.data.AmountOfBuy;
 
-    if(!tokensToBuy){
-        console.log("There is no token to buy");
+    if (!tokensToBuy) {
+      throw new Error("There is no token to buy");
     }
-
-    if (!positions[tokensToBuy]) {
-      // Check if the token is already in positions
-      await buyToken(tokensToBuy, amountOfSol);
-      return;
-    } else {
-      console.log(
-        `Token ${address} is already in positions. Skipping purchase.`
-      );
-    }
+    await buyToken(tokensToBuy, amountOfSol);
 
     console.log("Completed periodic token purchases.");
   } catch (error) {
@@ -112,6 +133,9 @@ async function buyNewTokens() {
 
 // Main loop to monitor positions and buy new tokens periodically
 async function main() {
+  // Load positions from file
+  loadPositions();
+
   let lastBuyTime = 0;
 
   while (true) {

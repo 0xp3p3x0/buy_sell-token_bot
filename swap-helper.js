@@ -3,11 +3,10 @@ import {
   PublicKey,
   Connection,
   Keypair,
+  sendAndConfirmRawTransaction
 } from "@solana/web3.js";
-import { getDecimals } from "./utils.js";
-import { connection, jito_fee } from "./config.js";
-import { wallet } from "./config.js";
-import { jito_executeAndConfirm } from "./jito_tips_tx_executor.js";
+import { getDecimals, validSelling } from "./utils.js";
+import { connection, wallet } from "./config.js";
 
 export async function getQuote(
   tokenToSell,
@@ -16,8 +15,8 @@ export async function getQuote(
   slippage
 ) {
   const url = `https://quote-api.jup.ag/v6/quote?inputMint=${tokenToSell}&outputMint=${tokenToBuy}&amount=${convertedAmountOfTokenOut}&slippageBps=${slippage}`;
-  console.log(url);
   const response = await fetch(url);
+  console.log("get quote url : ", url);
   const quote = await response.json();
   return quote;
 }
@@ -30,7 +29,7 @@ export async function getSwapTransaction(quoteResponse, wallet_pubKey) {
       userPublicKey: wallet_pubKey,
       wrapAndUnwrapSol: true,
       dynamicComputerUnitLimit: true,
-      prioritizationFeeLamports: 4211970,
+      prioritizationFeeLamports: 10000,
     };
     const resp = await fetch("https://quote-api.jup.ag/v6/swap", {
       method: "POST",
@@ -40,6 +39,7 @@ export async function getSwapTransaction(quoteResponse, wallet_pubKey) {
       body: JSON.stringify(body),
     });
     const swapResponse = await resp.json();
+    console.log("swap response : ", swapResponse);
     return swapResponse.swapTransaction;
   } catch (error) {
     throw new Error(error);
@@ -58,7 +58,7 @@ export async function finalizeTransaction(swapTransaction) {
     const swapTransactionBuf = Buffer.from(swapTransaction, "base64");
     let transaction = VersionedTransaction.deserialize(swapTransactionBuf);
 
-    const latestBlockhash = await connection.getLatestBlockhash("confirmed");
+    const latestBlockhash = await connection.getLatestBlockhash("processed");
     transaction.sign([wallet]);
 
     const { value: simulatedTransactionResponse } =
@@ -72,26 +72,21 @@ export async function finalizeTransaction(swapTransaction) {
       // If you are getting an invalid account error, make sure that you have the input mint account to actually swap from.
       console.error("Simulation Error:");
       console.error({ err, logs });
+      throw new Error(err);
     }
 
-    // const res = await jito_executeAndConfirm(
-    //   transaction,
-    //   wallet,
-    //   latestBlockhash,
-    //   jito_fee
-    // );
     const res = await simple_executeAndConfirm(
       transaction,
       wallet,
       latestBlockhash
     );
-    signature = res.signature;
+    signature = res;
 
-    return { signature };
+    return signature;
   } catch (err) {
     throw new Error(err);
   }
-  return { signature: null };
+  return null;
 }
 
 export async function swap(tokenToSell, tokenToBuy, amountTokenOut, slippage) {
@@ -112,7 +107,7 @@ export async function swap(tokenToSell, tokenToBuy, amountTokenOut, slippage) {
       quoteResponse,
       wallet_PubKey
     );
-    const { confirmed, signature } = await finalizeTransaction(swapTransaction);
+    const signature = await finalizeTransaction(swapTransaction);
     if (confirmed) {
       console.log("http://solscan.io/tx/" + signature);
     } else {
@@ -133,7 +128,7 @@ export async function simple_executeAndConfirm(
   console.log("Executing transaction...");
   const signature = await simple_execute(transaction);
   console.log("Transaction executed. Confirming transaction...", signature);
-  return signature; //simple_confirm(signature, lastestBlockhash);
+  return signature;
 }
 
 async function simple_execute(transaction) {
@@ -143,14 +138,13 @@ async function simple_execute(transaction) {
   });
 }
 
-async function simple_confirm(signature, latestBlockhash) {
-  const confirmation = await connection.confirmTransaction(
-    {
-      signature,
-      lastValidBlockHeight: latestBlockhash.lastValidBlockHeight,
-      blockhash: latestBlockhash.blockhash,
-    },
-    connection.commitment
-  );
-  return { confirmed: !confirmation.value.err, signature };
+export async function simple_executeAndConfirm_2(
+  transaction,
+  payer,
+  lastestBlockhash
+) {
+  console.log("Executing na Confirming transaction...");
+  const signature = await sendAndConfirmRawTransaction(connection, transaction.serialize(), "confirmed");
+  return signature;
+
 }

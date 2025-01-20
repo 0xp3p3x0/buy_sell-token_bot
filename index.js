@@ -146,8 +146,8 @@ async function main() {
       // Check if it's time to buy new tokens
       const currentTime = Date.now();
       if (currentTime - lastBuyTime >= BUY_INTERVAL) {
-        await buyNewTokens();
         lastBuyTime = currentTime;
+        await buyNewTokens();
       }
     } catch (error) {
       console.error("Error in main loop:", error);
